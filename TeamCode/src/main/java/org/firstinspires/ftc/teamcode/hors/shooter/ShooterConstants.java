@@ -23,8 +23,8 @@ public final class ShooterConstants {
     /** Hardware map name, the same one Teleop and PIDTest use. */
     public static final String POLLEN_SHOOTER_NAME = "pollenShooter";
 
-    /** REVERSE, as in tests/PIDTest. Flip it here if the wheel spins backwards. */
-    public static DcMotorSimple.Direction POLLEN_SHOOTER_DIRECTION = DcMotorSimple.Direction.REVERSE;
+    /** FORWARD: SET BY HAND (the team, 2026-11-07; was REVERSE, from tests/PIDTest). Flip it here if the wheel spins backwards. */
+    public static DcMotorSimple.Direction POLLEN_SHOOTER_DIRECTION = DcMotorSimple.Direction.FORWARD;
 
     // ===== goBILDA 5000-series 6000 RPM motor (1:1) =====
     // SPEC: 28 encoder counts per motor-shaft revolution; 6000 RPM free speed at 12 V.
@@ -36,8 +36,8 @@ public final class ShooterConstants {
         POLLEN_SHOOTER.label = "Pollen";
         POLLEN_SHOOTER.ticksPerRev = GOBILDA_6000_TICKS_PER_REV;
 
-        // Default RPM: SET BY HAND (the team, 2026-11-07; was BioHORS's 3050).
-        POLLEN_SHOOTER.targetRpm = 3200.0;
+        // Default RPM: SET BY HAND (the team, 2026-11-07; was 3200, BioHORS's 3050 before that).
+        POLLEN_SHOOTER.targetRpm = 3000.0;
 
         // Pollen: CARRIED OVER. On BioHORS: CALIBRATED FROM ROBOT by FtcAutoTune v1.4.3 (2026-11-05),
         // PD (classic ZN) candidate, Ku 0.019099 Tu 0.2211 s, kF sweep at 13.52 V; kS not measured.
