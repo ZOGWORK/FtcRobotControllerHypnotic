@@ -86,6 +86,13 @@ public class HorsClutchTeleOp extends LinearOpMode {
     public static double TURN_SIGN = -1.0;
 
     /**
+     * Strafe direction fix. SET BY HAND (the team, 2026-11-07: the mecanum wheels are mounted the
+     * wrong way round, so strafing was reversed; -1). Forward / backward and turning are not touched.
+     * Set back to 1 if the wheels are swapped to the right corners.
+     */
+    public static double STRAFE_SIGN = -1.0;
+
+    /**
      * The aim's turn command, on top of TURN_SIGN: positive turns the robot CLOCKWISE. With the
      * stick turning the right way, this should stay 1. Only if holding left trigger turns the robot
      * AWAY from the hive (and the stick turns correctly) set it to -1.
@@ -412,11 +419,12 @@ public class HorsClutchTeleOp extends LinearOpMode {
     }
 
     /**
-     * Teleop's mecanum mixing, with the turn flipped by TURN_SIGN: y is the raw left stick y, and
+     * Teleop's mecanum mixing, with the turn flipped by TURN_SIGN and the strafe by STRAFE_SIGN: y is the raw left stick y, and
      * rx positive (right stick right, or the aim turning right) turns the robot clockwise.
      */
     private void drive(double y, double x, double rx) {
         rx *= TURN_SIGN;
+        x *= STRAFE_SIGN;
         double denominator = Math.max(Math.abs(y) + Math.abs(x) + Math.abs(rx), 1);
         frontLeft.setPower((y + x + rx) / denominator);
         backLeft.setPower((y - x + rx) / denominator);
