@@ -42,19 +42,21 @@ import org.firstinspires.ftc.teamcode.subsystems.shooting.GateController;
  *   Left stick ............ drive (forward / strafe), the same mixing as Teleop
  *   Right stick X ......... turn (overridden while aiming)
  *   Left trigger (hold) ... AIM (gamepad1): turn the robot to face our hive's cell on this half of
- *                           the field, and spin the pollen shooter up
+ *                           the field
  *   Right bumper (hold) ... slow mode (0.45x). While aiming: nudge the aim RIGHT one step instead
  *   Left bumper ........... while aiming, nudge the aim LEFT one step. The nudge stays until an X reset.
  *   Right trigger ......... intake in
  *   A (hold) .............. OUTTAKE: both intake motors run out. Wins over right trigger.
- *   Y ..................... SHOOT SEQUENCE: spin the pollen shooter up, and once it is at speed (or
- *                           after SPINUP_TIMEOUT_S) run MAINHORS26's Y sequence: gates open and the
+ *   Y ..................... SHOOT SEQUENCE: once the pollen shooter is at speed (or after
+ *                           SPINUP_TIMEOUT_S) run MAINHORS26's Y sequence: gates open and the
  *                           intake feeds for 1050 ms, the pollen claw kicks 400 ms before the end and returns
  *                           to rest 300 ms later, then the gates close. Y again during spin-up cancels.
- *                           The flywheel STAYS ON after Y (dpad down turns it off), so the next Y
- *                           fires at once, with no spin-up from a stop. The rpm and trim are kept.
  *   B ..................... toggle both gates open / closed
- *   Dpad down ............. toggle the pollen shooter on / off, for spinning without aiming
+ *   Dpad down ............. nothing (the pollen shooter is always on)
+ *
+ * POLLEN SHOOTER ALWAYS ON: it starts spinning up at PLAY and runs at its target until the OpMode
+ * stops. No button turns it off, so every Y fires as soon as the wheel is at speed.
+ *
  *   Dpad left / right ..... pollen target RPM - / + (ShooterConstants.SHOOTER_TRIM_STEP_RPM), gamepad1 only
  *   X (hold) .............. RESET the pose: robot pushed into the alliance's corner beyond the loading
  *                           zone (RED: north-west), back on the side wall, side on the end wall, intake
@@ -160,7 +162,7 @@ public class HorsClutchTeleOp extends LinearOpMode {
     private double aimNudgeRad = 0.0;
     private double pollenTrimRpm = 0.0;
 
-    private boolean dpadDownLast, dpadLeftLast, dpadRightLast, bLast, xLast, yLast, lbLast, rbLast;
+    private boolean dpadLeftLast, dpadRightLast, bLast, xLast, yLast, lbLast, rbLast;
 
     private enum Shoot { IDLE, SPIN_UP, SEQUENCE }
 
@@ -243,7 +245,6 @@ public class HorsClutchTeleOp extends LinearOpMode {
         ElapsedTime sinceRumble = new ElapsedTime();
         boolean rumbledOnce = false;
         boolean xArmed = false;
-        boolean pollenToggledOn = false;
         boolean pollenFaultLast = false;
         Shoot shoot = Shoot.IDLE;
         Pose lastPose = localizer.pose();
@@ -326,9 +327,6 @@ public class HorsClutchTeleOp extends LinearOpMode {
                 if (shoot == Shoot.IDLE && !gateController.isBusy()) {
                     shoot = Shoot.SPIN_UP;
                     shootTimer.reset();
-                    // Y leaves the flywheel ON afterwards (until dpad down), so the next Y fires at
-                    // speed instead of spinning up from a stop again. Already at speed: no wait.
-                    pollenToggledOn = true;
                 } else if (shoot == Shoot.SPIN_UP) {
                     shoot = Shoot.IDLE;   // cancel before the gates open
                 }
@@ -348,11 +346,9 @@ public class HorsClutchTeleOp extends LinearOpMode {
             if (bNow && !bLast && shoot == Shoot.IDLE) gateController.toggleGate();
             bLast = bNow;
 
-            // ----- Pollen shooter: on from dpad down, aiming, or Y -----
-            boolean dpadDownNow = gamepad1.dpad_down || gamepad2.dpad_down;
-            if (dpadDownNow && !dpadDownLast) pollenToggledOn = !pollenToggledOn;
-            dpadDownLast = dpadDownNow;
-            boolean pollenOn = pollenToggledOn || aiming || shoot != Shoot.IDLE;
+            // ----- Pollen shooter: ALWAYS ON from PLAY to the end (the team, 2026-11-07). No button
+            // turns it off; dpad down does nothing. -----
+            boolean pollenOn = true;
             pollen.setShooterOn(pollenOn);
 
             boolean dpadLeftNow = gamepad1.dpad_left;
@@ -446,7 +442,6 @@ public class HorsClutchTeleOp extends LinearOpMode {
     }
 
     private void seedEdgeDetectors() {
-        dpadDownLast = gamepad1.dpad_down || gamepad2.dpad_down;
         dpadLeftLast = gamepad1.dpad_left;
         dpadRightLast = gamepad1.dpad_right;
         bLast = gamepad1.b || gamepad2.b;
