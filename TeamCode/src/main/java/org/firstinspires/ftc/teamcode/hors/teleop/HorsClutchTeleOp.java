@@ -35,7 +35,7 @@ import org.firstinspires.ftc.teamcode.subsystems.shooting.GateController;
  * unchanged; its timing is MAINHORS26's). The claw runs MAINHORS26's kick (hors/shooter/ClawKick):
  * rest, kick for ClawController.closeMs, back to rest, so every Y kicks. The claw positions are
  * this robot's, read from subsystems/shooting/ClawController (unchanged): pollen rests at closePos
- * and kicks to openPos. Only the pollen claw kicks; the nectar claw is held at its rest (openPos).
+ * and kicks up to POLLEN_CLAW_KICK_POS (0.95, higher than ClawController's 0.62). Only the pollen claw kicks; the nectar claw is held at its rest (openPos).
  *
  * Controls (gamepad1; gamepad2 mirrors the mechanism buttons):
  *   Left stick ............ drive (forward / strafe), the same mixing as Teleop
@@ -79,11 +79,25 @@ public class HorsClutchTeleOp extends LinearOpMode {
     public static double OUTTAKE_POWER = -1.0;
 
     /**
-     * The aim's turn command assumes a positive turn value spins the robot CLOCKWISE (right stick
-     * right = turn right). NEEDS CHECKING: if holding left trigger turns the robot AWAY from the
-     * hive and keeps spinning, set this to -1.
+     * Turn direction fix for this robot's drive. SET BY HAND (the team, 2026-11-07: turning was
+     * reversed with Teleop's mixing as it is, so -1). It flips the right stick AND the aim, since
+     * both feed the same turn.
+     */
+    public static double TURN_SIGN = -1.0;
+
+    /**
+     * The aim's turn command, on top of TURN_SIGN: positive turns the robot CLOCKWISE. With the
+     * stick turning the right way, this should stay 1. Only if holding left trigger turns the robot
+     * AWAY from the hive (and the stick turns correctly) set it to -1.
      */
     public static double AIM_YAW_SIGN = 1.0;
+
+    /**
+     * Where the pollen claw goes on a kick, servo position 0..1. SET BY HAND (the team, 2026-11-07:
+     * "really high"; ClawController's kick is 0.62, from a rest of 0.3). Lower it if the claw hits
+     * something or the servo buzzes at the top.
+     */
+    public static double POLLEN_CLAW_KICK_POS = 0.95;
 
     /** Longest wait for the pollen shooter to reach speed before Y shoots anyway, seconds. CARRIED OVER (BioHORS). */
     public static double SPINUP_TIMEOUT_S = 2.0;
@@ -172,7 +186,7 @@ public class HorsClutchTeleOp extends LinearOpMode {
         Servo pollenGate = hardwareMap.get(Servo.class, "pollenGate");
         Servo nectarGate = hardwareMap.get(Servo.class, "nectarGate");
         // This robot's claw positions (ClawController's init and trigger), MAINHORS26's kick logic.
-        pollenKick = new ClawKick(pollenClaw, ClawController.closePos, ClawController.openPos, ClawController.closeMs);
+        pollenKick = new ClawKick(pollenClaw, ClawController.closePos, POLLEN_CLAW_KICK_POS, ClawController.closeMs);
         nectarClaw.setPosition(ClawController.openPos);   // nectar is off: its claw stays at rest
         // GateController takes two flywheel references but never uses them: both null.
         gateController = new GateController(pollenGate, nectarGate, intakeLeft, intakeRight, null, null);
@@ -397,8 +411,12 @@ public class HorsClutchTeleOp extends LinearOpMode {
         intakeRight.setPower(0);
     }
 
-    /** Teleop's mecanum mixing, unchanged: y is the raw left stick y, rx positive turns clockwise. */
+    /**
+     * Teleop's mecanum mixing, with the turn flipped by TURN_SIGN: y is the raw left stick y, and
+     * rx positive (right stick right, or the aim turning right) turns the robot clockwise.
+     */
     private void drive(double y, double x, double rx) {
+        rx *= TURN_SIGN;
         double denominator = Math.max(Math.abs(y) + Math.abs(x) + Math.abs(rx), 1);
         frontLeft.setPower((y + x + rx) / denominator);
         backLeft.setPower((y - x + rx) / denominator);
