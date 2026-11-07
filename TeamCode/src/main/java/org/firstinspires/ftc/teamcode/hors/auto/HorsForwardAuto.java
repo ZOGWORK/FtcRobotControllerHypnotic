@@ -19,7 +19,7 @@ import com.qualcomm.robotcore.util.ElapsedTime;
 public class HorsForwardAuto extends LinearOpMode {
 
     /** How long to drive, seconds. SET BY HAND (the team, 2026-11-07). */
-    public static double DRIVE_TIME_S = 1.0;
+    public static double DRIVE_TIME_S = 0.5;
 
     /** Drive power while moving, 0..1. PLACEHOLDER: half power, so the distance is gentle and repeatable. */
     public static double DRIVE_POWER = 0.5;

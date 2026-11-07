@@ -33,9 +33,10 @@ import org.firstinspires.ftc.teamcode.subsystems.shooting.GateController;
  *
  * Gates and the intake sequence are this robot's own (subsystems/shooting/GateController,
  * unchanged; its timing is MAINHORS26's). The claw runs MAINHORS26's kick (hors/shooter/ClawKick):
- * rest, kick for ClawController.closeMs, back to rest, so every Y kicks. The claw positions are
- * this robot's, read from subsystems/shooting/ClawController (unchanged): pollen rests at closePos
- * and kicks up to POLLEN_CLAW_KICK_POS (0.95, higher than ClawController's 0.62). Only the pollen claw kicks; the nectar claw is held at its rest (openPos).
+ * rest, kick for ClawController.closeMs, back to rest, so every Y kicks. The pollen claw rests at
+ * POLLEN_CLAW_REST_POS (0.0) and kicks up to POLLEN_CLAW_KICK_POS (0.95), both set here, so the
+ * main Teleop's ClawController (unchanged) is not affected. Only the pollen claw kicks; the nectar
+ * claw is held at ClawController.openPos.
  *
  * Controls (gamepad1; gamepad2 mirrors the mechanism buttons):
  *   Left stick ............ drive (forward / strafe), the same mixing as Teleop
@@ -50,6 +51,8 @@ import org.firstinspires.ftc.teamcode.subsystems.shooting.GateController;
  *                           after SPINUP_TIMEOUT_S) run MAINHORS26's Y sequence: gates open and the
  *                           intake feeds for 1050 ms, the pollen claw kicks 400 ms before the end and returns
  *                           to rest 300 ms later, then the gates close. Y again during spin-up cancels.
+ *                           The flywheel STAYS ON after Y (dpad down turns it off), so the next Y
+ *                           fires at once, with no spin-up from a stop. The rpm and trim are kept.
  *   B ..................... toggle both gates open / closed
  *   Dpad down ............. toggle the pollen shooter on / off, for spinning without aiming
  *   Dpad left / right ..... pollen target RPM - / + (ShooterConstants.SHOOTER_TRIM_STEP_RPM), gamepad1 only
@@ -101,10 +104,17 @@ public class HorsClutchTeleOp extends LinearOpMode {
 
     /**
      * Where the pollen claw goes on a kick, servo position 0..1. SET BY HAND (the team, 2026-11-07:
-     * "really high"; ClawController's kick is 0.62, from a rest of 0.3). Lower it if the claw hits
+     * "really high"; ClawController's kick is 0.62). Lower it if the claw hits
      * something or the servo buzzes at the top.
      */
     public static double POLLEN_CLAW_KICK_POS = 0.95;
+
+    /**
+     * Where the pollen claw rests between kicks, servo position 0..1. SET BY HAND (the team,
+     * 2026-11-07: 0.0). Only HORS Clutch Teleop uses it; ClawController.closePos (0.3) is left
+     * as it is for the main Teleop.
+     */
+    public static double POLLEN_CLAW_REST_POS = 0.0;
 
     /** Longest wait for the pollen shooter to reach speed before Y shoots anyway, seconds. CARRIED OVER (BioHORS). */
     public static double SPINUP_TIMEOUT_S = 2.0;
@@ -193,7 +203,7 @@ public class HorsClutchTeleOp extends LinearOpMode {
         Servo pollenGate = hardwareMap.get(Servo.class, "pollenGate");
         Servo nectarGate = hardwareMap.get(Servo.class, "nectarGate");
         // This robot's claw positions (ClawController's init and trigger), MAINHORS26's kick logic.
-        pollenKick = new ClawKick(pollenClaw, ClawController.closePos, POLLEN_CLAW_KICK_POS, ClawController.closeMs);
+        pollenKick = new ClawKick(pollenClaw, POLLEN_CLAW_REST_POS, POLLEN_CLAW_KICK_POS, ClawController.closeMs);
         nectarClaw.setPosition(ClawController.openPos);   // nectar is off: its claw stays at rest
         // GateController takes two flywheel references but never uses them: both null.
         gateController = new GateController(pollenGate, nectarGate, intakeLeft, intakeRight, null, null);
@@ -316,6 +326,9 @@ public class HorsClutchTeleOp extends LinearOpMode {
                 if (shoot == Shoot.IDLE && !gateController.isBusy()) {
                     shoot = Shoot.SPIN_UP;
                     shootTimer.reset();
+                    // Y leaves the flywheel ON afterwards (until dpad down), so the next Y fires at
+                    // speed instead of spinning up from a stop again. Already at speed: no wait.
+                    pollenToggledOn = true;
                 } else if (shoot == Shoot.SPIN_UP) {
                     shoot = Shoot.IDLE;   // cancel before the gates open
                 }
