@@ -2,6 +2,7 @@ repositories {
     mavenCentral()
     google() // Needed for androidx
     maven { url 'https://repo.dairy.foundation/releases/'}
+    maven { url = 'https://jitpack.io' }   // FtcAutoTune
 }
 
 dependencies {
@@ -16,5 +17,10 @@ dependencies {
     implementation 'androidx.appcompat:appcompat:1.2.0'
     implementation 'com.pedropathing:revhub:3.0.2'
     implementation 'com.pedropathing:tuning:1.0.3'
+
+    // FtcAutoTune: relay-feedback PIDF auto tuner, used only by hors/tuning/autotune (AutoTune Pollen Shooter).
+    // https://ftcautotune.dev/ (JitPack). Same version as BioHORS.
+    implementation 'dev.ftcautotune.FtcAutoTune:pidautotuner-core:v1.4.3'
+    implementation 'dev.ftcautotune.FtcAutoTune:pidautotuner-ftc:v1.4.3'
 }
 
