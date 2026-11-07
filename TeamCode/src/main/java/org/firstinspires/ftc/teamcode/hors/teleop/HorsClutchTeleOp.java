@@ -21,6 +21,7 @@ import org.firstinspires.ftc.teamcode.hors.aim.AimVelocityFilter;
 import org.firstinspires.ftc.teamcode.hors.aim.Alliance;
 import org.firstinspires.ftc.teamcode.hors.aim.FieldTargets;
 import org.firstinspires.ftc.teamcode.hors.aim.PoseSanity;
+import org.firstinspires.ftc.teamcode.hors.shooter.ClawKick;
 import org.firstinspires.ftc.teamcode.hors.shooter.ShooterConstants;
 import org.firstinspires.ftc.teamcode.hors.shooter.ShooterController;
 import org.firstinspires.ftc.teamcode.subsystems.shooting.ClawController;
@@ -31,8 +32,11 @@ import org.firstinspires.ftc.teamcode.subsystems.shooting.GateController;
  * HORS Clutch Teleop: a helper teleop with BioHORS's (team 33950) odometry auto-aim, outtake and
  * pollen flywheel control on this robot. The main Teleop is unchanged.
  *
- * Gates, claw, intake sequence and their servo positions are this robot's own
- * (subsystems/shooting/GateController and ClawController, unchanged).
+ * Gates and the intake sequence are this robot's own (subsystems/shooting/GateController,
+ * unchanged; its timing is MAINHORS26's). The claw runs MAINHORS26's kick (hors/shooter/ClawKick):
+ * rest, kick for ClawController.closeMs, back to rest, so every Y kicks. The claw positions are
+ * this robot's, read from subsystems/shooting/ClawController (unchanged): pollen rests at closePos
+ * and kicks to openPos, nectar rests at openPos and kicks to closePos.
  *
  * Controls (gamepad1; gamepad2 mirrors the mechanism buttons):
  *   Left stick ............ drive (forward / strafe), the same mixing as Teleop
@@ -44,8 +48,9 @@ import org.firstinspires.ftc.teamcode.subsystems.shooting.GateController;
  *   Right trigger ......... intake in
  *   A (hold) .............. OUTTAKE: both intake motors run out. Wins over right trigger.
  *   Y ..................... SHOOT SEQUENCE: spin the pollen shooter up, and once it is at speed (or
- *                           after SPINUP_TIMEOUT_S) run this robot's gate / intake / claw sequence
- *                           (GateController.startIntakeSequence). Y again during spin-up cancels.
+ *                           after SPINUP_TIMEOUT_S) run MAINHORS26's Y sequence: gates open and the
+ *                           intake feeds for 1050 ms, the claws kick 400 ms before the end and return
+ *                           to rest 300 ms later, then the gates close. Y again during spin-up cancels.
  *   B ..................... toggle both gates open / closed
  *   Dpad down ............. toggle the pollen shooter on / off, for spinning without aiming
  *   Dpad left / right ..... pollen target RPM - / + (ShooterConstants.SHOOTER_TRIM_STEP_RPM), gamepad1 only
@@ -115,7 +120,8 @@ public class HorsClutchTeleOp extends LinearOpMode {
     private ShooterController pollen;
     private FlywheelPIDF nectarPID;
     private GateController gateController;
-    private ClawController clawController;
+    private ClawKick pollenKick;
+    private ClawKick nectarKick;
     private GoBildaPinpointDriver pinpoint;
     private Localizer localizer;
     private final AimController aim = new AimController();
@@ -171,10 +177,13 @@ public class HorsClutchTeleOp extends LinearOpMode {
         Servo nectarClaw = hardwareMap.get(Servo.class, "nectarClaw");
         Servo pollenGate = hardwareMap.get(Servo.class, "pollenGate");
         Servo nectarGate = hardwareMap.get(Servo.class, "nectarGate");
-        clawController = new ClawController(pollenClaw, nectarClaw);
+        // This robot's claw positions (ClawController's init and trigger), MAINHORS26's kick logic.
+        pollenKick = new ClawKick(pollenClaw, ClawController.closePos, ClawController.openPos, ClawController.closeMs);
+        nectarKick = new ClawKick(nectarClaw, ClawController.openPos, ClawController.closePos, ClawController.closeMs);
         // GateController keeps the flywheel references but never uses them; the pollen one is now
         // ShooterController, so it gets null.
         gateController = new GateController(pollenGate, nectarGate, intakeLeft, intakeRight, null, nectarPID);
+        gateController.setGateClosed(true);   // as MAINHORS26 starts: gates closed
 
         pinpoint = hardwareMap.get(GoBildaPinpointDriver.class, HorsLocalizer.PINPOINT_NAME);
         localizer = HorsLocalizer.create(hardwareMap);
@@ -302,8 +311,13 @@ public class HorsClutchTeleOp extends LinearOpMode {
                 gateController.startIntakeSequence(nowMs);
                 shoot = Shoot.SEQUENCE;
             }
-            if (gateController.update(nowMs)) clawController.trigger(nowMs);
-            clawController.update(nowMs);
+            // MAINHORS26: the gate sequence says when to kick (400 ms before its end).
+            if (gateController.update(nowMs)) {
+                pollenKick.trigger(nowMs);
+                nectarKick.trigger(nowMs);
+            }
+            pollenKick.update(nowMs);
+            nectarKick.update(nowMs);
             if (shoot == Shoot.SEQUENCE && !gateController.isBusy()) shoot = Shoot.IDLE;
 
             // ----- B: toggle the gates (ignored while the sequence runs) -----
