@@ -111,6 +111,7 @@ public class HorsClutchTeleOp extends LinearOpMode {
 
     private DcMotor frontLeft, frontRight, backLeft, backRight, intakeLeft, intakeRight;
     private DcMotorEx nectarShooter;
+    private DcMotorEx pollenMotor;
     private ShooterController pollen;
     private FlywheelPIDF nectarPID;
     private GateController gateController;
@@ -155,7 +156,11 @@ public class HorsClutchTeleOp extends LinearOpMode {
             battery = hardwareMap.voltageSensor.iterator().next();
         } catch (Exception ignored) {
         }
-        DcMotorEx pollenMotor = hardwareMap.get(DcMotorEx.class, ShooterConstants.POLLEN_SHOOTER_NAME);
+        // Closed loop on the pollen motor's ENCODER: every update() reads getVelocity() (encoder
+        // ticks/s), converts it to flywheel rpm and runs the PIDF on the rpm error. The mode is
+        // RUN_WITHOUT_ENCODER only so the hub's own velocity PID does not fight ours; the encoder
+        // is still read every loop. A dead or backwards encoder shows on the Pollen line.
+        pollenMotor = hardwareMap.get(DcMotorEx.class, ShooterConstants.POLLEN_SHOOTER_NAME);
         pollenMotor.setDirection(ShooterConstants.POLLEN_SHOOTER_DIRECTION);
         pollen = new ShooterController(ShooterConstants.POLLEN_SHOOTER, pollenMotor, telemetry, battery);
 
@@ -468,5 +473,9 @@ public class HorsClutchTeleOp extends LinearOpMode {
                 : pollen.isAtTarget() ? "OK" : "SPINNING UP";
         telemetry.addData("Pollen", "%.0f / %.0f rpm %s (trim %+.0f)",
                 pollen.getCurrentRpm(), pollen.getTargetRpm(), state, pollenTrimRpm);
+        // The raw encoder the loop runs on: if these stay at 0 while the wheel spins, the encoder
+        // cable is unplugged or on the wrong port.
+        telemetry.addData("Pollen encoder", "%d ticks, %.0f ticks/s, power %.2f",
+                pollenMotor.getCurrentPosition(), pollenMotor.getVelocity(), pollen.getLastAppliedPower());
     }
 }

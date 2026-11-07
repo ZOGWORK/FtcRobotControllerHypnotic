@@ -36,8 +36,8 @@ public final class ShooterConstants {
         POLLEN_SHOOTER.label = "Pollen";
         POLLEN_SHOOTER.ticksPerRev = GOBILDA_6000_TICKS_PER_REV;
 
-        // Default RPM: CARRIED OVER (BioHORS, set by the team 2026-11-06).
-        POLLEN_SHOOTER.targetRpm = 3050.0;
+        // Default RPM: SET BY HAND (the team, 2026-11-07; was BioHORS's 3050).
+        POLLEN_SHOOTER.targetRpm = 3200.0;
 
         // Pollen: CARRIED OVER. On BioHORS: CALIBRATED FROM ROBOT by FtcAutoTune v1.4.3 (2026-11-05),
         // PD (classic ZN) candidate, Ku 0.019099 Tu 0.2211 s, kF sweep at 13.52 V; kS not measured.
