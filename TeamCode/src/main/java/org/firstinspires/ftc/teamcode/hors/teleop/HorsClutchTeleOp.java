@@ -172,7 +172,8 @@ public class HorsClutchTeleOp extends LinearOpMode {
     private GateController gateController;
     private ClawKick pollenKick;
     private GoBildaPinpointDriver pinpoint;
-    private Localizer localizer;
+    private Localizer localizer;   // null when the Pinpoint is not found: no aim, no hold
+    private String odometryError = "";
     private final AimController aim = new AimController();
 
     private Alliance alliance = Alliance.RED;
@@ -242,9 +243,18 @@ public class HorsClutchTeleOp extends LinearOpMode {
         gateController = new GateController(pollenGate, nectarGate, intakeLeft, intakeRight, null, null);
         gateController.setGateClosed(true);   // as MAINHORS26 starts: gates closed
 
-        pinpoint = hardwareMap.get(GoBildaPinpointDriver.class, HorsLocalizer.PINPOINT_NAME);
-        localizer = HorsLocalizer.create(hardwareMap);
-        localizer.setPose(defaultStartPose(alliance));
+        // Fail-safe: a Pinpoint that is missing from the config, unplugged or failing must not crash
+        // the OpMode. Without it there is no pose: aim and the position hold are off, and the robot
+        // still drives (and brakes on left trigger).
+        try {
+            pinpoint = hardwareMap.get(GoBildaPinpointDriver.class, HorsLocalizer.PINPOINT_NAME);
+            localizer = HorsLocalizer.create(hardwareMap);
+        } catch (Exception e) {
+            pinpoint = null;
+            localizer = null;
+            odometryError = "Pinpoint '" + HorsLocalizer.PINPOINT_NAME + "' not found: " + e.getMessage();
+        }
+        safeSetPose(defaultStartPose(alliance));
         AimVelocityFilter velocityFilter = new AimVelocityFilter(AIM_VELOCITY_ALPHA, HorsLocalizer.MAX_SPEED_IN_PER_S);
         poseSanity = new PoseSanity(HorsLocalizer.MAX_SPEED_IN_PER_S);
 
@@ -256,12 +266,14 @@ public class HorsClutchTeleOp extends LinearOpMode {
             if (picked != null && picked != alliance) {
                 alliance = picked;
                 targetCell = FieldTargets.upCellAtKickoff(alliance);
-                localizer.setPose(defaultStartPose(alliance));
+                safeSetPose(defaultStartPose(alliance));
             }
             seedEdgeDetectors();
-            localizer.update();
+            safeUpdate();
             telemetry.addData("Alliance", "%s  (dpad left = RED, dpad right = BLUE)", alliance);
-            telemetry.addData("Pinpoint", pinpointReady() ? "READY" : "NOT READY");
+            telemetry.addData("Pinpoint", localizer == null ? "NOT FOUND: aim and hold OFF, driving still works"
+                    : pinpointReady() ? "READY" : "NOT READY");
+            if (!odometryError.isEmpty()) telemetry.addData("Odometry", odometryError);
             addPoseTelemetry();
             telemetry.addData("Pollen", "target %.0f rpm", pollen.getTargetRpm());
             telemetry.addLine("Press X at the reset corner after PLAY before trusting aim.");
@@ -278,12 +290,12 @@ public class HorsClutchTeleOp extends LinearOpMode {
         boolean xArmed = false;
         boolean pollenFaultLast = false;
         Shoot shoot = Shoot.IDLE;
-        Pose lastPose = localizer.pose();
+        Pose lastPose = safePose();
 
         while (opModeIsActive()) {
             long nowMs = System.currentTimeMillis();
-            localizer.update();
-            Pose pose = localizer.pose();
+            safeUpdate();
+            Pose pose = safePose();
             double dt = loopTimer.seconds();
             loopTimer.reset();
             if (poseUsable(pose)) poseSanity.check(pose.x(), pose.y(), sincePlay.seconds());
@@ -454,7 +466,7 @@ public class HorsClutchTeleOp extends LinearOpMode {
             if (!xNow) xArmed = false;
             if (xArmed && xHold.seconds() >= RESET_HOLD_S) {
                 xArmed = false;
-                localizer.setPose(resetPose(alliance));
+                safeSetPose(resetPose(alliance));
                 lastPose = null;
                 velocityFilter.reset();
                 poseSanity.reset();
@@ -544,6 +556,37 @@ public class HorsClutchTeleOp extends LinearOpMode {
         return new Pose(-DEFAULT_START_X_IN, -DEFAULT_START_Y_IN, AimController.wrap(DEFAULT_START_HEADING_RAD + Math.PI));
     }
 
+    /** Reads the Pinpoint; a failure is shown on telemetry and the pose goes invalid, never a crash. */
+    private void safeUpdate() {
+        if (localizer == null) return;
+        try {
+            localizer.update();
+            odometryError = "";
+        } catch (Exception e) {
+            odometryError = "Pinpoint read failed: " + e.getMessage();
+        }
+    }
+
+    /** The current pose, or null if there is no Pinpoint or it fails. */
+    private Pose safePose() {
+        if (localizer == null) return null;
+        try {
+            return localizer.pose();
+        } catch (Exception e) {
+            odometryError = "Pinpoint pose failed: " + e.getMessage();
+            return null;
+        }
+    }
+
+    private void safeSetPose(Pose p) {
+        if (localizer == null) return;
+        try {
+            localizer.setPose(p);
+        } catch (Exception e) {
+            odometryError = "Pinpoint set pose failed: " + e.getMessage();
+        }
+    }
+
     private boolean pinpointReady() {
         try {
             return pinpoint != null && pinpoint.getDeviceStatus() == GoBildaPinpointDriver.DeviceStatus.READY;
@@ -559,14 +602,19 @@ public class HorsClutchTeleOp extends LinearOpMode {
 
     private Velocity pinpointVelocity() {
         try {
-            return localizer.velocity();
+            return localizer == null ? null : localizer.velocity();
         } catch (Exception e) {
             return null;
         }
     }
 
     private void addPoseTelemetry() {
-        Pose p = localizer.pose();
+        Pose p = safePose();
+        if (p == null) {
+            telemetry.addData("Pose", localizer == null ? "none (no Pinpoint): aim and hold OFF"
+                    : "none: " + odometryError);
+            return;
+        }
         String why = !poseUsable(p) ? "(INVALID)"
                 : poseSanity != null && !poseSanity.fault().isEmpty()
                         ? "(INVALID: " + poseSanity.fault() + ", hold X at the reset spot)" : "";
@@ -585,7 +633,11 @@ public class HorsClutchTeleOp extends LinearOpMode {
                 pollen.getCurrentRpm(), pollen.getTargetRpm(), state, pollenTrimRpm);
         // The raw encoder the loop runs on: if these stay at 0 while the wheel spins, the encoder
         // cable is unplugged or on the wrong port.
-        telemetry.addData("Pollen encoder", "%d ticks, %.0f ticks/s, power %.2f",
-                pollenMotor.getCurrentPosition(), pollenMotor.getVelocity(), pollen.getLastAppliedPower());
+        try {
+            telemetry.addData("Pollen encoder", "%d ticks, %.0f ticks/s, power %.2f",
+                    pollenMotor.getCurrentPosition(), pollenMotor.getVelocity(), pollen.getLastAppliedPower());
+        } catch (Exception e) {
+            telemetry.addData("Pollen encoder", "read failed: %s", e.getMessage());
+        }
     }
 }
