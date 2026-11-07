@@ -41,8 +41,10 @@ import org.firstinspires.ftc.teamcode.subsystems.shooting.GateController;
  * Controls (gamepad1; gamepad2 mirrors the mechanism buttons):
  *   Left stick ............ drive (forward / strafe), the same mixing as Teleop
  *   Right stick X ......... turn (overridden while aiming)
- *   Left trigger (hold) ... AIM (gamepad1): turn the robot to face our hive's cell on this half of
- *                           the field
+ *   Left trigger (hold) ... AIM + POSITION HOLD (gamepad1): turn the robot to face our hive's cell on
+ *                           this half of the field, and hold the spot where the trigger was pressed:
+ *                           the left stick is ignored, the drive brakes, and if a defender pushes the
+ *                           robot the Pinpoint drives it back (HOLD_*). Let go to drive again.
  *   Right bumper (hold) ... slow mode (0.45x). While aiming: nudge the aim RIGHT one step instead
  *   Left bumper ........... while aiming, nudge the aim LEFT one step. The nudge stays until an X reset.
  *   Right trigger ......... intake in
@@ -118,6 +120,23 @@ public class HorsClutchTeleOp extends LinearOpMode {
      */
     public static double POLLEN_CLAW_REST_POS = 0.0;
 
+    // ===== Position hold (left trigger held) =====
+    /** false: holding left trigger only stops and brakes, with no push back. */
+    public static boolean POSITION_HOLD_ENABLED = true;
+    /** Push-back power per inch off the held spot. PLACEHOLDER: raise it if a shove still moves the
+     *  robot, lower it if the robot wobbles around the spot. */
+    public static double HOLD_KP = 0.08;
+    /** Most power the hold may use to push back, 0..1. PLACEHOLDER. */
+    public static double HOLD_MAX_POWER = 0.6;
+    /** Closer than this to the spot, inches: no push (brake only), so it does not jitter. SET BY HAND. */
+    public static double HOLD_DEADBAND_IN = 0.5;
+    /** Further than this from the spot, inches: stop pushing and just brake. A shove does not move a
+     *  braked robot this far, so it means a bad pose or a wrong HOLD_SIGN. SET BY HAND. */
+    public static double HOLD_GIVE_UP_IN = 18.0;
+    /** NEEDS CHECKING on the robot: hold the trigger, push the robot a few inches. It should drive
+     *  BACK. If it drives further away (and then gives up at HOLD_GIVE_UP_IN), set this to -1. */
+    public static double HOLD_SIGN = 1.0;
+
     /** Longest wait for the pollen shooter to reach speed before Y shoots anyway, seconds. CARRIED OVER (BioHORS). */
     public static double SPINUP_TIMEOUT_S = 2.0;
 
@@ -166,6 +185,13 @@ public class HorsClutchTeleOp extends LinearOpMode {
 
     private enum Shoot { IDLE, SPIN_UP, SEQUENCE }
 
+    // Position hold (left trigger): the spot it holds, and its state.
+    private boolean aimHeldLast = false;
+    private boolean holdSet = false;
+    private boolean holdGaveUp = false;
+    private double holdX, holdY;
+    private double holdErrorIn = Double.NaN;
+
     @Override
     public void runOpMode() {
         for (LynxModule hub : hardwareMap.getAll(LynxModule.class)) {
@@ -181,6 +207,11 @@ public class HorsClutchTeleOp extends LinearOpMode {
         backLeft.setDirection(DcMotor.Direction.FORWARD);
         frontRight.setDirection(DcMotor.Direction.REVERSE);
         backRight.setDirection(DcMotor.Direction.REVERSE);
+        // BRAKE, as BioHORS's drive: at zero power the motors resist being turned, so the robot stops
+        // where it is instead of coasting, and is harder to push.
+        for (DcMotor m : new DcMotor[] {frontLeft, frontRight, backLeft, backRight}) {
+            m.setZeroPowerBehavior(DcMotor.ZeroPowerBehavior.BRAKE);
+        }
 
         intakeLeft = hardwareMap.get(DcMotor.class, "intakeLeft");
         intakeRight = hardwareMap.get(DcMotor.class, "intakeRight");
@@ -307,6 +338,45 @@ public class HorsClutchTeleOp extends LinearOpMode {
             double x = gamepad1.left_stick_x * scale;
             double rx = gamepad1.right_stick_x * scale;
             boolean aiming = aimHeld && poseOk;
+
+            // ----- Position hold while left trigger is held: the left stick is ignored, the drive
+            // motors BRAKE, and the Pinpoint pushes the robot back to where the trigger was pressed,
+            // so a defender cannot shove it off its spot. Turning stays with the aim. -----
+            if (aimHeld && !aimHeldLast) {
+                holdSet = poseOk;
+                holdGaveUp = false;
+                if (poseOk) {
+                    holdX = pose.x();
+                    holdY = pose.y();
+                }
+            }
+            aimHeldLast = aimHeld;
+            holdErrorIn = Double.NaN;
+            if (aimHeld) {
+                y = 0.0;   // stop: no driving while holding
+                x = 0.0;
+                if (POSITION_HOLD_ENABLED && holdSet && poseOk && !holdGaveUp) {
+                    double ex = holdX - pose.x();
+                    double ey = holdY - pose.y();
+                    holdErrorIn = Math.hypot(ex, ey);
+                    if (holdErrorIn > HOLD_GIVE_UP_IN) {
+                        // Pushed (or driving) further than a shove could: something is wrong (pose or
+                        // sign), so stop pushing and just brake until the trigger is let go.
+                        holdGaveUp = true;
+                    } else if (holdErrorIn > HOLD_DEADBAND_IN) {
+                        // Field error into the robot's frame: forward along the heading, left 90 deg CCW.
+                        double h = pose.heading();
+                        double fwdErr = ex * Math.cos(h) + ey * Math.sin(h);
+                        double leftErr = -ex * Math.sin(h) + ey * Math.cos(h);
+                        double fwd = clamp(HOLD_KP * fwdErr, HOLD_MAX_POWER);
+                        double right = clamp(-HOLD_KP * leftErr, HOLD_MAX_POWER);
+                        // Teleop's mixing: negative y drives forward; positive x strafes right.
+                        y = HOLD_SIGN * -fwd;
+                        x = HOLD_SIGN * right;
+                    }
+                }
+            }
+
             if (aiming) {
                 // Clockwise-positive, like the right stick. Yaw has priority: translation gets only
                 // the headroom the aim leaves.
@@ -389,6 +459,7 @@ public class HorsClutchTeleOp extends LinearOpMode {
                 velocityFilter.reset();
                 poseSanity.reset();
                 aimNudgeRad = 0.0;
+                holdSet = false;            // the held spot was in the old pose: forget it
                 gamepad1.rumble(120);
             }
             xLast = xNow;
@@ -415,6 +486,12 @@ public class HorsClutchTeleOp extends LinearOpMode {
             if (pollenFault) fire += " | POLLEN ENCODER FAULT";
             telemetry.addData("Fire", fire);
             telemetry.addData("Target", "%s %s cell", alliance, targetCell);
+            if (aimHeld) {
+                telemetry.addData("Hold", !POSITION_HOLD_ENABLED ? "brake only (POSITION_HOLD_ENABLED off)"
+                        : !holdSet || !poseOk ? "brake only (no valid pose)"
+                        : holdGaveUp ? "GAVE UP: too far off the spot, brake only (check HOLD_SIGN)"
+                        : String.format(Locale.ROOT, "holding, %.1f in off the spot", holdErrorIn));
+            }
             addPoseTelemetry();
             addShooterTelemetry(pollenOn);
             telemetry.update();
@@ -439,6 +516,10 @@ public class HorsClutchTeleOp extends LinearOpMode {
         backLeft.setPower((y - x + rx) / denominator);
         frontRight.setPower((y - x - rx) / denominator);
         backRight.setPower((y + x - rx) / denominator);
+    }
+
+    private static double clamp(double v, double max) {
+        return Math.max(-max, Math.min(max, v));
     }
 
     private void seedEdgeDetectors() {
